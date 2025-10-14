@@ -1,0 +1,199 @@
+name: Autograding Tests
+on:
+  - push
+  - workflow_dispatch
+  - repository_dispatch
+permissions:
+  checks: write
+  actions: read
+  contents: read
+jobs:
+  run-autograding-tests:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-classroom[bot]'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Resolve CSS path
+      id: resolve-css
+      run: |
+        set -euo pipefail
+        CSS=""
+        if [[ -f styles.css ]]; then CSS="styles.css"; fi
+        if [[ -z "$CSS" && -f css/styles.css ]]; then CSS="css/styles.css"; fi
+        echo "css_path=$CSS" >> "$GITHUB_OUTPUT"
+
+    - name: Three closing P tags
+      id: p-tags
+      uses: classroom-resources/autograding-io-grader@v1
+      with:
+        test-name: 3 "</p>" in index.html
+        command: |
+          bash -lc '
+          [[ -f index.html ]] || { echo "FAIL (missing)"; exit 0; }
+          c=$(grep -o "</p>" index.html | wc -l || true)
+          [[ $c -ge 3 ]] && echo PASS || echo "FAIL ($c)"
+          '
+        expected-output: PASS
+        comparison-method: exact
+        timeout: 5
+        max-score: 10
+
+    - name: rel="stylesheet" present
+      id: rel-stylesheet
+      uses: classroom-resources/autograding-io-grader@v1
+      with:
+        test-name: rel="stylesheet" in index.html
+        command: |
+          bash -lc '
+          grep -q "rel=\"stylesheet\"" index.html && echo PASS || echo FAIL
+          '
+        expected-output: PASS
+        comparison-method: exact
+        timeout: 5
+        max-score: 5
+
+    - name: Heading closers mix
+      id: headings-mix
+      uses: classroom-resources/autograding-io-grader@v1
+      with:
+        test-name: 3 </h3>, 1 </h2>, 1 </h1>
+        command: |
+          bash -lc '
+          h3=$(grep -o "</h3>" index.html | wc -l)
+          h2=$(grep -o "</h2>" index.html | wc -l)
+          h1=$(grep -o "</h1>" index.html | wc -l)
+          [[ $h3 -ge 3 && $h2 -ge 1 && $h1 -ge 1 ]] && echo PASS || echo "FAIL ($h3,$h2,$h1)"
+          '
+        expected-output: PASS
+        comparison-method: exact
+        timeout: 5
+        max-score: 5
+
+    - name: IMG + float in CSS
+      id: img-close-float
+      uses: classroom-resources/autograding-io-grader@v1
+      with:
+        test-name: 3 "<img " + float in CSS
+        command: |
+          bash -lc '
+          CSS="${{ steps.resolve-css.outputs.css_path }}"
+          ic=$(grep -o "<img " index.html | wc -l)
+          if [[ -n "$CSS" ]] && grep -qi "float:" "$CSS" && [[ $ic -ge 3 ]]; then echo PASS; else echo FAIL; fi
+          '
+        expected-output: PASS
+        comparison-method: exact
+        timeout: 5
+        max-score: 5
+
+    - name: Three closing anchor tags
+      id: a-close
+      uses: classroom-resources/autograding-io-grader@v1
+      with:
+        test-name: 3 "</a>" in index.html
+        command: |
+          bash -lc '
+          c=$(grep -o "</a>" index.html | wc -l)
+          [[ $c -ge 3 ]] && echo PASS || echo FAIL
+          '
+        expected-output: PASS
+        comparison-method: exact
+        timeout: 5
+        max-score: 5
+
+    - name: Two closing DIV tags
+      id: div-close
+      uses: classroom-resources/autograding-io-grader@v1
+      with:
+        test-name: 2 "</div>" in index.html
+        command: |
+          bash -lc '
+          c=$(grep -o "</div>" index.html | wc -l)
+          [[ $c -ge 2 ]] && echo PASS || echo FAIL
+          '
+        expected-output: PASS
+        comparison-method: exact
+        timeout: 5
+        max-score: 10
+
+    - name: Class attributes + CSS dot selector
+      id: class-and-css-dot
+      uses: classroom-resources/autograding-io-grader@v1
+      with:
+        test-name: 3 class= + '.' selector in CSS
+        command: |
+          bash -lc '
+          CSS="${{ steps.resolve-css.outputs.css_path }}"
+          cls=$(grep -oE "class\s*=" index.html | wc -l)
+          [[ $cls -ge 3 && -n "$CSS" ]] && grep -qE '\.[A-Za-z0-9_-]+' "$CSS" && echo PASS || echo FAIL
+          '
+        expected-output: PASS
+        comparison-method: exact
+        timeout: 5
+        max-score: 10
+
+    - name: Core CSS properties
+      id: css-core
+      uses: classroom-resources/autograding-io-grader@v1
+      with:
+        test-name: CSS includes padding, margin, border, line-height, font
+        command: |
+          bash -lc '
+          CSS="${{ steps.resolve-css.outputs.css_path }}"
+          for k in padding margin border line-height font; do
+            grep -qi "$k" "$CSS" || { echo FAIL; exit 0; }
+          done
+          echo PASS
+          '
+        expected-output: PASS
+        comparison-method: exact
+        timeout: 5
+        max-score: 10
+
+    - name: CSS pseudo-classes
+      id: css-pseudo
+      uses: classroom-resources/autograding-io-grader@v1
+      with:
+        test-name: CSS :hover / :visited / :active
+        command: |
+          bash -lc '
+          CSS="${{ steps.resolve-css.outputs.css_path }}"
+          grep -qiE ":(hover|visited|active)" "$CSS" && echo PASS || echo FAIL
+          '
+        expected-output: PASS
+        comparison-method: exact
+        timeout: 5
+        max-score: 5
+
+    - name: CSS media queries
+      id: css-media
+      uses: classroom-resources/autograding-io-grader@v1
+      with:
+        test-name: 3 "@media max-width"
+        command: |
+          bash -lc '
+          CSS="${{ steps.resolve-css.outputs.css_path }}"
+          c=$(grep -i "@media" "$CSS" | grep -i "max-width" | wc -l)
+          [[ $c -ge 3 ]] && echo PASS || echo FAIL
+          '
+        expected-output: PASS
+        comparison-method: exact
+        timeout: 5
+        max-score: 10
+
+    - name: Autograding Reporter
+      uses: classroom-resources/autograding-grading-reporter@v1
+      env:
+        P-TAGS_RESULTS: "${{ steps.p-tags.outputs.result }}"
+        REL-STYLESHEET_RESULTS: "${{ steps.rel-stylesheet.outputs.result }}"
+        HEADINGS-MIX_RESULTS: "${{ steps.headings-mix.outputs.result }}"
+        IMG-CLOSE-FLOAT_RESULTS: "${{ steps.img-close-float.outputs.result }}"
+        A-CLOSE_RESULTS: "${{ steps.a-close.outputs.result }}"
+        DIV-CLOSE_RESULTS: "${{ steps.div-close.outputs.result }}"
+        CLASS-AND-CSS-DOT_RESULTS: "${{ steps.class-and-css-dot.outputs.result }}"
+        CSS-CORE_RESULTS: "${{ steps.css-core.outputs.result }}"
+        CSS-PSEUDO_RESULTS: "${{ steps.css-pseudo.outputs.result }}"
+        CSS-MEDIA_RESULTS: "${{ steps.css-media.outputs.result }}"
+      with:
+        runners: "p-tags,rel-stylesheet,headings-mix,img-close-float,a-close,div-close,class-and-css-dot,css-core,css-pseudo,css-media"
